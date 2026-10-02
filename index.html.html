@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>デッキ透視鏡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column — paste box, deck summary strip, then card rows grouped by type like a spoiler list */
+:root{
+  --bg:#eceff0; --surface:#ffffff; --ink:#15191b; --muted:#5f6b70; --line:#d5dcdf;
+  --accent:#2f5d50; --accent-ink:#ffffff; --chip:#e3e9e8; --official:#2f5d50; --mt:#9a5b12; --bar:#2f5d50;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic","Meiryo",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101413; --surface:#181e1c; --ink:#e6ecea; --muted:#94a39d; --line:#2a3330;
+    --accent:#7cc4a8; --accent-ink:#0d1412; --chip:#222b28; --official:#7cc4a8; --mt:#e0a45a; --bar:#5fae90;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101413; --surface:#181e1c; --ink:#e6ecea; --muted:#94a39d; --line:#2a3330;
+  --accent:#7cc4a8; --accent-ink:#0d1412; --chip:#222b28; --official:#7cc4a8; --mt:#e0a45a; --bar:#5fae90;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.7 var(--f-body);
+  padding:env(safe-area-inset-top,0px) 16px calc(env(safe-area-inset-bottom,0px) + 48px)}
+img{max-width:100%}
+[hidden]{display:none!important}
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:22px;padding-block:24px 0}
+
+.masthead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.masthead h1{font:800 clamp(26px,6vw,36px)/1.1 var(--f-display);margin:0;letter-spacing:.04em;text-wrap:balance}
+.masthead p{margin:0;color:var(--muted);font-size:13px}
+
+.paste{display:flex;flex-direction:column;gap:10px}
+.paste label{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:700}
+textarea{width:100%;min-height:150px;resize:vertical;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface);color:var(--ink);font:500 12.5px/1.6 var(--f-mono)}
+textarea:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{appearance:none;border:0;border-radius:999px;padding:10px 20px;font:700 14px/1 var(--f-body);cursor:pointer;
+  background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-left:auto}
+.seg button{appearance:none;border:0;background:transparent;color:var(--muted);padding:8px 14px;font:700 13px/1 var(--f-body);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.status{font-size:13px;color:var(--muted);min-height:1.5em;margin:0}
+.status.err{color:#c0392b}
+
+.summary{display:grid;grid-template-columns:auto 1fr;gap:18px 28px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.totals{display:flex;flex-direction:column;gap:6px;min-width:0}
+.big{font:800 40px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.big small{font:500 13px var(--f-body);color:var(--muted);margin-left:4px}
+.typecounts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.typecounts span{background:var(--chip);border-radius:6px;padding:2px 8px;font-size:12px;font-variant-numeric:tabular-nums}
+.curve{display:flex;flex-direction:column;gap:6px;min-width:0}
+.curve h2{margin:0;font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.bars{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end;height:96px}
+.bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px}
+.bar i{display:block;width:100%;max-width:34px;background:var(--bar);border-radius:4px 4px 0 0;min-height:2px}
+.bar b{font:500 11px var(--f-mono);color:var(--ink)}
+.bar span{font:500 11px var(--f-mono);color:var(--muted)}
+.avg{font-size:12px;color:var(--muted);margin:0}
+@media (max-width:520px){.summary{grid-template-columns:1fr}}
+
+.group{display:flex;flex-direction:column;gap:12px}
+.group > h2{margin:0;font:800 18px/1.3 var(--f-display);display:flex;align-items:baseline;gap:10px;
+  border-bottom:1px solid var(--line);padding-bottom:6px}
+.group > h2 small{font:500 13px var(--f-mono);color:var(--muted)}
+.section-title{margin:14px 0 0;font:700 13px var(--f-body);letter-spacing:.1em;color:var(--muted)}
+
+.card{display:grid;grid-template-columns:112px minmax(0,1fr);gap:14px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+@media (min-width:720px){.card{grid-template-columns:160px minmax(0,1fr);gap:20px}}
+.thumb{position:relative;appearance:none;border:0;padding:0;background:transparent;cursor:zoom-in;align-self:start;border-radius:5%}
+.thumb img{display:block;width:100%;aspect-ratio:488/680;border-radius:5%;background:var(--chip);object-fit:cover}
+.qty{position:absolute;left:-6px;top:-6px;background:var(--ink);color:var(--bg);font:500 13px/1 var(--f-mono);
+  padding:6px 8px;border-radius:999px;font-variant-numeric:tabular-nums}
+.faces-note{font-size:11px;color:var(--muted);text-align:center;margin-top:4px}
+.body{min-width:0;display:flex;flex-direction:column;gap:8px}
+.face + .face{border-top:1px dashed var(--line);padding-top:10px}
+.face{display:flex;flex-direction:column;gap:4px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.name{margin:0;font:800 18px/1.35 var(--f-display);text-wrap:balance}
+.mana{display:inline-flex;gap:2px;flex-shrink:0;padding-top:3px}
+.ename{margin:0;font-size:12px;color:var(--muted)}
+.type{margin:0;font-size:13px;font-weight:700;color:var(--muted)}
+.text{font-size:14.5px;line-height:1.75}
+.text p{margin:0 0 .35em}
+.text i{color:var(--muted)}
+.text.en{font-size:13px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+.pt{margin:0;font:500 14px var(--f-mono);align-self:flex-end}
+.sym{width:1.05em;height:1.05em;vertical-align:-.15em;margin:0 1px}
+.mana .sym{width:18px;height:18px}
+.foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;margin-top:2px}
+.chip{border-radius:999px;padding:2px 9px;font-weight:700;font-size:11px;letter-spacing:.04em;border:1px solid currentColor}
+.chip.official{color:var(--official)}
+.chip.mt{color:var(--mt)}
+.chip.wait{color:var(--muted)}
+.foot a{color:var(--muted)}
+.missing{padding:14px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}
+
+dialog{border:0;padding:0;background:transparent;max-width:min(92vw,520px);width:100%}
+dialog::backdrop{background:rgba(0,0,0,.78)}
+.lb{display:flex;flex-direction:column;gap:12px;align-items:center}
+.lb img{width:100%;border-radius:4.5%;display:block}
+.lb .row{display:flex;gap:10px}
+.lb .btn.ghost{color:#fff;border-color:rgba(255,255,255,.4)}
+.note{font-size:12px;color:var(--muted);margin:0}
+@media (prefers-reduced-motion:no-preference){.card{animation:in .25s ease both}@keyframes in{from{transform:translateY(4px)}to{transform:none}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <h1>デッキ透視鏡</h1>
+    <p>MTGアリーナのデッキリストを貼るだけ</p>
+  </header>
+
+  <section class="paste">
+    <label for="deck">デッキリスト</label>
+    <textarea id="deck" spellcheck="false" autocomplete="off"></textarea>
+    <div class="controls">
+      <button class="btn" id="go">表示する</button>
+      <button class="btn ghost" id="clear">クリア</button>
+      <div class="seg" role="group" aria-label="表示言語">
+        <button type="button" id="lang-ja" data-lang="ja" aria-pressed="true">日本語</button>
+        <button type="button" id="lang-both" data-lang="both" aria-pressed="false">両方</button>
+        <button type="button" id="lang-en" data-lang="en" aria-pressed="false">English</button>
+      </div>
+    </div>
+    <p class="status" id="status" aria-live="polite"></p>
+  </section>
+
+  <section class="summary" id="summary" hidden></section>
+  <div id="list" class="wrap" style="padding:0"></div>
+  <p class="note">カード情報と画像は Scryfall から取得しています。日本語は公式の日本語版テキストを優先し、日本語版が存在しないカードだけ機械翻訳します。印刷版の日本語は、のちのルール変更（エラッタ）が反映されていないことがあります。</p>
+</div>
+
+<dialog id="lb">
+  <div class="lb">
+    <img id="lb-img" alt="">
+    <div class="row">
+      <button class="btn ghost" id="lb-flip" hidden>裏面を見る</button>
+      <button class="btn" id="lb-close">閉じる</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const API = 'https://api.scryfall.com';
+const CACHE = 'ds2:';
+const SAMPLE = `Deck
+4 Darklight Phoenix (FRA) 53
+21 Swamp (SLD) 1132
+4 Dark Matter Manipulator (FRA) 52
+4 Bloodghast (DFT) 77
+4 Overlord of the Balemurk (DSK) 113
+3 Liliana the Repentant (FRA) 231
+4 Bitter Triumph (LCI) 91
+2 Deadly Precision (TLA) 95
+4 Winter, Tormented Loner (FRA) 240
+4 Infestation Sage (FDN) 64
+4 Rankle's Prank (WOE) 102
+1 Cavern of Souls (LCI) 269
+1 Realm of Koh (TLA) 276`;
+
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+
+let lang = store.get(CACHE+'lang') || 'ja';
+let cards = [];      // rendered entries
+let runId = 0;
+
+/* ---------- Scryfall ---------- */
+let lastReq = 0;
+async function sf(url, opts = {}, tries = 3){
+  const wait = Math.max(0, 120 - (Date.now() - lastReq));
+  if (wait) await sleep(wait);
+  lastReq = Date.now();
+  const res = await fetch(url, {...opts, headers:{'Accept':'application/json', ...(opts.headers||{})}});
+  if (res.status === 404) return null;
+  if (res.status === 429 && tries > 0){ await sleep(1200); return sf(url, opts, tries-1); }
+  if (!res.ok) throw new Error('Scryfall ' + res.status);
+  return res.json();
+}
+
+/* ---------- parse ---------- */
+const HEADS = {deck:'main','デッキ':'main',main:'main',mainboard:'main',
+  sideboard:'side','サイドボード':'side',commander:'commander','統率者':'commander',
+  companion:'companion','相棒':'companion'};
+const SECTION_LABEL = {main:'メインデッキ', side:'サイドボード', commander:'統率者', companion:'相棒'};
+
+function parseDeck(text){
+  const out = []; let section = 'main', saw = false, explicit = false;
+  for (const raw of text.split(/\r?\n/)){
+    let line = raw.trim();
+    if (!line){ if (saw && !explicit && section === 'main') section = 'side'; continue; }
+    const h = HEADS[line.toLowerCase().replace(/[:：]$/,'')];
+    if (h){ section = h; explicit = true; continue; }
+    if (/^(about|name)\b/i.test(line)) continue;
+    let sec = section;
+    if (/^SB:\s*/i.test(line)){ sec = 'side'; line = line.replace(/^SB:\s*/i,''); }
+    line = line.replace(/\s+\*[A-Z]+\*$/,'');
+    const m = line.match(/^(\d+)\s*[xX×]?\s+(.+?)(?:\s+\(([A-Za-z0-9_]{2,8})\)(?:\s+(\S+))?)?$/);
+    if (!m) continue;
+    const e = {qty:+m[1], name:m[2].trim(), set:m[3]?m[3].toLowerCase():null, cn:m[4]||null, section:sec};
+    const dup = out.find(o => o.name === e.name && o.section === e.section);
+    if (dup) dup.qty += e.qty; else out.push(e);
+    saw = true;
+  }
+  return out;
+}
+
+/* ---------- card model ---------- */
+const norm = s => String(s||'').toLowerCase().replace(/[’']/g,"'").trim();
+function nameMatches(c, name){
+  if (/[^\x00-\x7f]/.test(name)) return true; // Japanese name in list: trust set/number
+  const n = norm(name);
+  return norm(c.name) === n || norm(c.name.split(' // ')[0]) === n
+      || (c.card_faces||[]).some(f => norm(f.name) === n);
+}
+function imagesOf(c){
+  if (c.image_uris) return [c.image_uris.normal || c.image_uris.large];
+  return (c.card_faces||[]).map(f => f.image_uris && (f.image_uris.normal || f.image_uris.large)).filter(Boolean);
+}
+function statOf(f){
+  if (f.power != null) return `${f.power}/${f.toughness}`;
+  if (f.loyalty != null) return `忠誠度 ${f.loyalty}`;
+  if (f.defense != null) return `防衛 ${f.defense}`;
+  return '';
+}
+function toModel(c){
+  const src = c.card_faces && c.card_faces.length ? c.card_faces : [c];
+  return {
+    name: c.name, set: c.set, cn: c.collector_number, cmc: c.cmc || 0,
+    type: c.type_line || src[0].type_line || '', uri: c.scryfall_uri,
+    oracle: c.oracle_id || (c.card_faces && c.card_faces[0].oracle_id) || null,
+    imgs: imagesOf(c),
+    faces: src.map(f => ({name:f.name, mana:f.mana_cost||'', type:f.type_line||'', text:f.oracle_text||'', stat:statOf(f)}))
+  };
+}
+
+async function findByName(name){
+  if (/[^\x00-\x7f]/.test(name)){
+    const r = await sf(`${API}/cards/search?include_multilingual=true&q=${encodeURIComponent('!"'+name+'"')}`);
+    const hit = r && r.data && r.data[0];
+    return hit && hit.oracle_id ? await sf(`${API}/cards/search?q=${encodeURIComponent('oracleid:'+hit.oracle_id)}`).then(x => x && x.data && x.data[0]) : hit;
+  }
+  return sf(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`);
+}
+
+async function fetchEnglish(entries, progress){
+  const keyOf = e => e.set && e.cn ? `${e.set}/${e.cn}` : `n/${norm(e.name)}`;
+  const result = new Map(), need = [];
+  for (const e of entries){
+    const k = keyOf(e);
+    if (result.has(k) || need.some(x => x[0] === k)) continue;
+    const hit = store.get(CACHE + 'en:' + k);
+    if (hit) result.set(k, hit); else need.push([k, e]);
+  }
+  let done = entries.length - need.length;
+  for (let i = 0; i < need.length; i += 75){
+    const chunk = need.slice(i, i+75);
+    const ids = chunk.map(([,e]) => e.set && e.cn ? {set:e.set, collector_number:e.cn} : {name:e.name});
+    const j = await sf(`${API}/cards/collection`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({identifiers:ids})});
+    const data = (j && j.data) || [];
+    for (const [k, e] of chunk){
+      let c = data.find(c => e.set && e.cn && c.set === e.set && String(c.collector_number) === String(e.cn) && nameMatches(c, e.name))
+           || data.find(c => !e.set && nameMatches(c, e.name));
+      if (!c){ try { c = await findByName(e.name); } catch(err){ c = null; } }
+      if (c){ const m = toModel(c); result.set(k, m); store.set(CACHE + 'en:' + k, m); }
+      progress(++done);
+    }
+  }
+  return entries.map(e => ({entry:e, card: result.get(keyOf(e)) || null}));
+}
+
+/* ---------- Japanese ---------- */
+const hasPrinted = j => !!(j && (j.printed_name || (j.card_faces||[]).some(f => f.printed_name)));
+const TYPE_JA = [['Legendary','伝説の'],['Basic','基本'],['Snow','氷雪'],['World','ワールド'],['Kindred','同族'],['Tribal','部族'],
+  ['Token','トークン'],['Artifact','アーティファクト'],['Battle','バトル'],['Creature','クリーチャー'],['Enchantment','エンチャント'],
+  ['Instant','インスタント'],['Land','土地'],['Planeswalker','プレインズウォーカー'],['Sorcery','ソーサリー']];
+const SUPER = new Set(['Legendary','Basic','Snow','World','Token']);
+function typeJa(t){
+  const [main, sub] = String(t).split(' — ');
+  const dict = Object.fromEntries(TYPE_JA);
+  const words = main.trim().split(/\s+/);
+  const sup = words.filter(w => SUPER.has(w)).map(w => dict[w]).join('');
+  const types = words.filter(w => !SUPER.has(w)).map(w => dict[w] || w).join('・');
+  const s = sup + types;
+  return sub ? `${s} — ${sub}` : s;
+}
+async function translate(text){
+  if (!text) return '';
+  const k = CACHE + 'mt:' + text;
+  const hit = store.get(k); if (hit) return hit;
+  let out = null;
+  try {
+    const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ja&dt=t&q=' + encodeURIComponent(text));
+    if (r.ok){ const a = await r.json(); out = a[0].map(s => s[0]).join(''); }
+  } catch(e){}
+  if (!out){
+    try {
+      const parts = [];
+      for (const line of text.split('\n')){
+        const r = await fetch('https://api.mymemory.translated.net/get?langpair=en|ja&q=' + encodeURIComponent(line.slice(0,480)));
+        const a = await r.json(); parts.push(a.responseData && a.responseData.translatedText || line);
+      }
+      out = parts.join('\n');
+    } catch(e){}
+  }
+  if (out){
+    out = out.replace(/[｛]/g,'{').replace(/[｝]/g,'}').replace(/\{\s*([^}]+?)\s*\}/g, (m,c) => '{'+c.toUpperCase()+'}');
+    store.set(k, out);
+  }
+  return out;
+}
+async function fetchJapanese(card){
+  const k = CACHE + 'ja:' + (card.oracle || card.name);
+  const hit = store.get(k); if (hit) return hit;
+  let j = null;
+  try {
+    j = await sf(`${API}/cards/${card.set}/${encodeURIComponent(card.cn)}/ja`);
+    if (!hasPrinted(j) && card.oracle){
+      const r = await sf(`${API}/cards/search?unique=prints&order=released&dir=desc&include_extras=true&q=${encodeURIComponent('oracleid:'+card.oracle+' lang:ja')}`);
+      j = r && r.data ? r.data.find(hasPrinted) : null;
+    }
+  } catch(e){ j = null; }
+  let out;
+  if (hasPrinted(j)){
+    const src = j.card_faces && j.card_faces.length ? j.card_faces : [j];
+    out = {source:'official', imgs: imagesOf(j),
+      faces: src.map((f,i) => ({name: f.printed_name || card.faces[i]?.name || '', type: f.printed_type_line || typeJa(card.faces[i]?.type || ''), text: f.printed_text || ''}))};
+  } else {
+    const faces = [];
+    for (const f of card.faces){
+      const t = await translate(f.text);
+      faces.push({name:f.name, type:typeJa(f.type), text:t || f.text, failed: f.text && !t});
+    }
+    out = {source: faces.some(f => f.failed) ? 'failed' : 'mt', faces};
+  }
+  if (out.source !== 'failed') store.set(k, out);
+  return out;
+}
+
+/* ---------- render ---------- */
+function symbols(html){
+  return html.replace(/\{([^}]+)\}/g, (m, c) => {
+    const code = c.replace(/\//g,'').toUpperCase();
+    return `<img class="sym" src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(code)}.svg" alt="{${esc(c)}}" loading="lazy">`;
+  });
+}
+function rich(text){
+  return String(text||'').split('\n').filter(Boolean).map(p =>
+    '<p>' + symbols(esc(p).replace(/(\([^)]*\)|（[^）]*）)/g,'<i>$1</i>')) + '</p>').join('');
+}
+const GROUPS = [['creature','クリーチャー'],['planeswalker','プレインズウォーカー'],['battle','バトル'],['instant','インスタント'],
+  ['sorcery','ソーサリー'],['artifact','アーティファクト'],['enchantment','エンチャント'],['land','土地'],['other','その他']];
+function groupOf(type){
+  const t = String(type).split(' // ')[0].toLowerCase();
+  if (t.includes('creature')) return 'creature';
+  if (t.includes('planeswalker')) return 'planeswalker';
+  if (t.includes('battle')) return 'battle';
+  if (t.includes('land')) return 'land';
+  for (const g of ['instant','sorcery','artifact','enchantment']) if (t.includes(g)) return g;
+  return 'other';
+}
+
+function cardHTML(item, idx){
+  const {entry, card, ja} = item;
+  if (!card) return `<div class="missing">見つかりませんでした：${esc(entry.qty)} ${esc(entry.name)}${entry.set ? ` (${esc(entry.set.toUpperCase())}) ${esc(entry.cn||'')}` : ''}</div>`;
+  const imgs = (lang !== 'en' && ja && ja.imgs && ja.imgs.length) ? ja.imgs : card.imgs;
+  const faces = card.faces.map((f, i) => {
+    const jf = ja && ja.faces[i];
+    const showJa = lang !== 'en' && jf;
+    const name = showJa && ja.source === 'official' ? jf.name : f.name;
+    const type = showJa ? jf.type : f.type;
+    let text = '';
+    if (lang === 'en' || !jf) text = f.text ? `<div class="text">${rich(f.text)}</div>` : '';
+    else {
+      text = jf.text ? `<div class="text">${rich(jf.text)}</div>` : '';
+      if (lang === 'both' && f.text) text += `<div class="text en">${rich(f.text)}</div>`;
+    }
+    return `<div class="face">
+      <div class="head"><h3 class="name">${esc(name)}</h3><span class="mana">${symbols(esc(f.mana))}</span></div>
+      ${name !== f.name ? `<p class="ename">${esc(f.name)}</p>` : ''}
+      <p class="type">${esc(type)}</p>
+      ${text}
+      ${f.stat ? `<p class="pt">${esc(f.stat)}</p>` : ''}
+    </div>`;
+  }).join('');
+  let chip = '';
+  if (lang !== 'en'){
+    if (!ja) chip = '<span class="chip wait">日本語を取得中…</span>';
+    else if (ja.source === 'official') chip = '<span class="chip official">公式日本語</span>';
+    else if (ja.source === 'mt') chip = '<span class="chip mt">機械翻訳</span>';
+    else chip = '<span class="chip mt">翻訳できませんでした</span>';
+  }
+  return `<article class="card" id="c${idx}">
+    <div>
+      <button class="thumb" data-idx="${idx}" aria-label="${esc(card.name)} を拡大">
+        ${imgs[0] ? `<img src="${esc(imgs[0])}" alt="${esc(card.name)}" loading="lazy">` : ''}
+        <span class="qty">${esc(entry.qty)}</span>
+      </button>
+      ${imgs.length > 1 ? '<div class="faces-note">両面カード</div>' : ''}
+    </div>
+    <div class="body">${faces}
+      <div class="foot">${chip}<span>${esc(card.set.toUpperCase())} #${esc(card.cn)}</span><a href="${esc(card.uri)}" target="_blank" rel="noopener">Scryfall</a></div>
+    </div>
+  </article>`;
+}
+
+function render(){
+  const list = $('#list');
+  const sections = ['commander','companion','main','side'].filter(s => cards.some(c => c.entry.section === s));
+  let html = '';
+  for (const s of sections){
+    const inSec = cards.map((c,i) => ({...c, i})).filter(c => c.entry.section === s);
+    if (sections.length > 1 || s !== 'main') html += `<h2 class="section-title">${SECTION_LABEL[s]}（${inSec.reduce((a,c)=>a+c.entry.qty,0)}枚）</h2>`;
+    for (const [g, label] of GROUPS){
+      const rows = inSec.filter(c => (c.card ? groupOf(c.card.type) : 'other') === g);
+      if (!rows.length) continue;
+      html += `<section class="group"><h2>${label}<small>${rows.reduce((a,c)=>a+c.entry.qty,0)}</small></h2>${rows.map(c => cardHTML(c, c.i)).join('')}</section>`;
+    }
+  }
+  list.innerHTML = html;
+  renderSummary();
+}
+function rerenderOne(i){
+  const el = document.getElementById('c'+i);
+  if (!el) return;
+  const tmp = document.createElement('div'); tmp.innerHTML = cardHTML(cards[i], i);
+  el.replaceWith(tmp.firstElementChild);
+}
+function renderSummary(){
+  const main = cards.filter(c => c.entry.section === 'main');
+  const side = cards.filter(c => c.entry.section === 'side');
+  const total = main.reduce((a,c)=>a+c.entry.qty,0);
+  const counts = {};
+  for (const c of main){ const g = c.card ? groupOf(c.card.type) : 'other'; counts[g] = (counts[g]||0) + c.entry.qty; }
+  const curve = [0,0,0,0,0,0,0]; let sum = 0, n = 0;
+  for (const c of main){ if (!c.card || groupOf(c.card.type) === 'land') continue;
+    const v = Math.floor(c.card.cmc); curve[Math.min(v,6)] += c.entry.qty; sum += v * c.entry.qty; n += c.entry.qty; }
+  const max = Math.max(1, ...curve);
+  $('#summary').innerHTML = `
+    <div class="totals">
+      <div class="big">${total}<small>枚</small></div>
+      ${side.length ? `<div class="avg">サイドボード ${side.reduce((a,c)=>a+c.entry.qty,0)}枚</div>` : ''}
+      <div class="typecounts">${GROUPS.filter(([g]) => counts[g]).map(([g,l]) => `<span>${l} ${counts[g]}</span>`).join('')}</div>
+    </div>
+    <div class="curve">
+      <h2>マナカーブ（土地以外）</h2>
+      <div class="bars">${curve.map((v,i) => `<div class="bar"><b>${v||''}</b><i style="height:${Math.round(v/max*70)}%"></i><span>${i===6?'6+':i}</span></div>`).join('')}</div>
+      <p class="avg">平均マナ総量 ${n ? (sum/n).toFixed(2) : '–'}</p>
+    </div>`;
+  $('#summary').hidden = false;
+}
+
+/* ---------- run ---------- */
+async function run(){
+  const my = ++runId;
+  const text = $('#deck').value;
+  store.set(CACHE+'deck', text);
+  const entries = parseDeck(text);
+  const status = $('#status');
+  status.classList.remove('err');
+  if (!entries.length){ status.textContent = 'カードの行が見つかりませんでした。「4 Bloodghast (DFT) 77」のような形式で貼ってください。'; return; }
+  $('#go').disabled = true;
+  status.textContent = `カード情報を取得中… 0 / ${entries.length}`;
+  try {
+    const got = await fetchEnglish(entries, d => { if (my === runId) status.textContent = `カード情報を取得中… ${d} / ${entries.length}`; });
+    if (my !== runId) return;
+    cards = got.map(g => ({...g, ja:null}));
+    render();
+    const miss = cards.filter(c => !c.card).length;
+    status.textContent = miss ? `${miss}種類のカードが見つかりませんでした。` : '';
+    if (lang !== 'en') await loadJapanese(my);
+  } catch(err){
+    status.classList.add('err');
+    status.textContent = 'Scryfall に接続できませんでした。通信状況を確認して、もう一度「表示する」を押してください。';
+  } finally {
+    $('#go').disabled = false;
+  }
+}
+async function loadJapanese(my){
+  const status = $('#status');
+  const todo = cards.map((c,i) => i).filter(i => cards[i].card && !cards[i].ja);
+  let d = 0;
+  for (const i of todo){
+    if (my !== runId) return;
+    status.textContent = `日本語テキストを取得中… ${d} / ${todo.length}`;
+    cards[i].ja = await fetchJapanese(cards[i].card);
+    rerenderOne(i); d++;
+  }
+  if (my === runId) status.textContent = '';
+}
+
+/* ---------- UI ---------- */
+function setLang(l){
+  lang = l; store.set(CACHE+'lang', l);
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === l)));
+  if (!cards.length) return;
+  render();
+  if (l !== 'en' && cards.some(c => c.card && !c.ja)) loadJapanese(runId);
+}
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
+$('#go').addEventListener('click', run);
+$('#clear').addEventListener('click', () => { $('#deck').value = ''; $('#deck').focus(); });
+
+const lb = $('#lb'); let lbImgs = [], lbAt = 0;
+$('#list').addEventListener('click', e => {
+  const t = e.target.closest('.thumb'); if (!t) return;
+  const c = cards[+t.dataset.idx]; if (!c || !c.card) return;
+  lbImgs = (lang !== 'en' && c.ja && c.ja.imgs && c.ja.imgs.length) ? c.ja.imgs : c.card.imgs;
+  lbAt = 0; showLb();
+  if (lb.showModal) lb.showModal(); else lb.setAttribute('open','');
+});
+function showLb(){
+  $('#lb-img').src = (lbImgs[lbAt] || '').replace('/normal/','/large/');
+  $('#lb-flip').hidden = lbImgs.length < 2;
+  $('#lb-flip').textContent = lbAt ? '表面を見る' : '裏面を見る';
+}
+$('#lb-flip').addEventListener('click', () => { lbAt = (lbAt + 1) % lbImgs.length; showLb(); });
+$('#lb-close').addEventListener('click', () => lb.close());
+lb.addEventListener('click', e => { if (e.target === lb) lb.close(); });
+
+$('#deck').value = store.get(CACHE+'deck') || SAMPLE;
+setLang(lang);
+run();
+</script>
+</body>
+</html>
